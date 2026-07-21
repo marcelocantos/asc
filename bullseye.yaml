@@ -33,3 +33,5 @@ targets:
     tags:
     - telemetry
     - app-store-connect
+    origin: session
+    discovered: 2026-07-21
