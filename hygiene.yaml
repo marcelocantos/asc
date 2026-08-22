@@ -1,0 +1,332 @@
+# hygiene.yaml — declared, drift-validated hygiene posture for this repo.
+# Schema reference: the `hygiene` skill (~/.claude/skills/hygiene/SKILL.md).
+# Validate with `/hygiene`; aggregate the fleet with `/hygiene fleet`. Sibling
+# to bullseye.yaml: bullseye tracks aspirational state ("achieve X"); hygiene
+# tracks steady-state ("we maintain X").
+#
+# Tiers are PER DIMENSION (schema v1). For each dimension the held tier is the
+# highest T such that every item in that dimension with tier <= T is satisfied.
+# `floors` is the per-dimension ratchet: a dimension dropping below its floor
+# is DRIFT and fails the check. `aspires` is the gap horizon for reporting.
+# `enforce` is intent-only metadata and does NOT affect tiers.
+
+schema_version: 1
+
+repo: asc
+aspires: 3
+floors:            # per-dimension held-tier ratchet; below floor => DRIFT
+  correctness: 1   # local pytest via make test; no CI
+  security: 2      # no committed secrets + GitHub secret scanning
+  quality: 0       # no ruff/format config or CI lint
+  deps: 0          # no lockfile, no Dependabot / vuln alerts
+  release: 0       # no tags, no CI-built artifacts, no CHANGELOG
+  governance: 2    # LICENSE/README/.gitignore + squash-only
+  build: 1         # pyproject Python pin; no Actions
+  docs: 0          # README is governance; no docs oracle
+  perf: 0          # no benchmark suite
+  vcs: 0           # no committed git hooks
+  agent: 2         # AGENTS.md + bullseye.yaml + CLI help flags
+
+tiers:
+  1: baseline    # LICENSE + README + .gitignore; tests build & run
+  2: maintained  # full matrix, examples run, lint/format, release + governance
+  3: hardened    # formal specs, security scanning, SBOM/signing, fuzzing, perf
+
+items:
+
+  # ============================== CORRECTNESS =============================
+  - id: correctness.tests
+    dim: correctness
+    desc: Hermetic pytest suite runs locally via `make test`
+    state: present
+    cadence: continuous
+    enforce: blocking
+    tier: 1
+    evidence: {make_target: test}
+
+  - id: correctness.ci
+    dim: correctness
+    desc: Pytest runs on every push/PR in GitHub Actions
+    state: planned
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    reason: No .github/workflows; pytest is local-only (Makefile `test`).
+    evidence: {absent: {ci_job: "ci.yml#test"}}
+
+  # =========================== SECURITY / SUPPLY ==========================
+  - id: security.no-committed-secrets
+    dim: security
+    desc: App Store Connect keys are never tracked (no .p8/.pem in git)
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence:
+      command: test -z "$(git ls-files '*.p8' '*.pem')"
+
+  - id: security.github-secret-scan
+    dim: security
+    desc: GitHub secret scanning enabled on the public repo
+    state: present
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence:
+      gh_setting: {key: security_and_analysis.secret_scanning.status, equals: enabled}
+
+  - id: security.github-push-protection
+    dim: security
+    desc: GitHub secret-scanning push protection enabled
+    state: present
+    cadence: continuous
+    enforce: blocking
+    tier: 2
+    evidence:
+      gh_setting:
+        {key: security_and_analysis.secret_scanning_push_protection.status, equals: enabled}
+
+  - id: security.secret-scan
+    dim: security
+    desc: Secret scanning (gitleaks) in pre-commit and/or CI
+    state: planned
+    cadence: continuous
+    enforce: blocking
+    tier: 3
+    reason: Relying on GitHub secret scanning; no gitleaks config or CI job yet.
+    evidence: {absent: {scanner: {tool: gitleaks}}}
+
+  - id: security.dep-pinning
+    dim: security
+    desc: Locked dependency graph (uv.lock) for reproducible installs
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: pyproject.toml has lower bounds only; no lockfile committed.
+    evidence: {absent: {file: {path: uv.lock}}}
+
+  - id: security.dep-audit
+    dim: security
+    desc: Vulnerability scanning of Python deps (pip-audit / OSV)
+    state: planned
+    cadence: periodic:30d
+    enforce: warning
+    tier: 3
+    reason: GitHub vulnerability alerts are disabled; pip-audit is not wired.
+    evidence: {absent: {scanner: {tool: pip-audit}}}
+
+  - id: security.sast-codeql
+    dim: security
+    desc: CodeQL static analysis
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 3
+    reason: No Actions workflows, so CodeQL is not enabled.
+    evidence: {absent: {ci_job: "ci.yml#codeql"}}
+
+  # ============================== CODE QUALITY ============================
+  - id: quality.format
+    dim: quality
+    desc: Sources are ruff-format clean, enforced in CI
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: No ruff config; formatting is by-hand. ruff is not a repo gate.
+    evidence: {absent: {file: {path: ruff.toml}}}
+
+  - id: quality.lint
+    dim: quality
+    desc: ruff check is clean, enforced in CI
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: No ruff config or CI lint job. Auxiliary ruff currently reports F401.
+    evidence: {absent: {ci_step: {workflow: ci.yml, name: Ruff}}}
+
+  # =========================== DEPENDENCY HEALTH ==========================
+  - id: deps.dependabot
+    dim: deps
+    desc: Dependabot or GitHub vulnerability alerts watch Python deps
+    state: planned
+    cadence: periodic:30d
+    enforce: warning
+    tier: 3
+    reason: Vulnerability alerts disabled; no .github/dependabot.yml.
+    evidence: {absent: {file: {path: .github/dependabot.yml}}}
+
+  # ========================== RELEASE & VERSIONING =======================
+  - id: release.changelog
+    dim: release
+    desc: A maintained CHANGELOG records user-visible changes per release
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: History lives in git; no curated CHANGELOG.md and no git tags yet.
+    evidence: {absent: {file: {path: CHANGELOG.md}}}
+
+  - id: release.ci-built
+    dim: release
+    desc: Release artifacts are built by CI, never locally
+    state: planned
+    cadence: per-release
+    enforce: warning
+    tier: 3
+    reason: No release workflow; the package is installed editable from source.
+    evidence: {absent: {ci_job: "release.yml#build"}}
+
+  # ============================ GOVERNANCE / META ========================
+  - id: governance.license
+    dim: governance
+    desc: Apache-2.0 LICENSE present
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: LICENSE, matches: 'Apache License'}}
+
+  - id: governance.readme
+    dim: governance
+    desc: README present and current
+    state: present
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 1
+    evidence: {file: {path: README.md}}
+
+  - id: governance.gitignore
+    dim: governance
+    desc: .gitignore covers build artifacts, bytecode, venvs, IDE/OS files
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: .gitignore}}
+
+  - id: governance.squash-only
+    dim: governance
+    desc: Repo is squash-merge only, with delete-branch-on-merge
+    state: enforced
+    cadence: once-must-hold
+    enforce: blocking
+    tier: 2
+    evidence: {gh_setting: {key: allow_merge_commit, equals: false}}
+
+  - id: governance.security-md
+    dim: governance
+    desc: SECURITY.md documents the vulnerability-disclosure process
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: Public repo without a published disclosure policy yet.
+    evidence: {absent: {file: {path: SECURITY.md}}}
+
+  # ================================= BUILD ===============================
+  - id: build.python-requires
+    dim: build
+    desc: Python 3.10+ is pinned in pyproject.toml
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 1
+    evidence: {file: {path: pyproject.toml, matches: 'requires-python = ">=3.10"'}}
+
+  - id: build.ci
+    dim: build
+    desc: GitHub Actions builds and tests the package
+    state: planned
+    cadence: continuous
+    enforce: warning
+    tier: 2
+    reason: No .github/workflows; install and test are local (`uv pip install -e .`).
+    evidence: {absent: {file: {path: .github/workflows/ci.yml}}}
+
+  # ============================ DOCUMENTATION ============================
+  - id: docs.md-links
+    dim: docs
+    desc: Internal markdown links resolve (no dead cross-references)
+    state: planned
+    cadence: continuous
+    enforce: informational
+    tier: 3
+    reason: Small doc surface (README + AGENTS.md); no link checker wired.
+    evidence: {absent: {make_target: check-md-links}}
+
+  - id: docs.todo
+    dim: docs
+    desc: docs/TODO.md exists as the repo TODO sink
+    state: skipped
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: >-
+      Global convention bans TODO files; bullseye.yaml is the intent ledger
+      for followable work.
+    evidence: {absent: {file: {path: docs/TODO.md}}}
+
+  # ============================== PERFORMANCE ===========================
+  - id: perf.benchmarks
+    dim: perf
+    desc: Benchmark suite exists
+    state: skipped
+    cadence: per-release
+    enforce: informational
+    tier: 3
+    reason: Small CLI over Apple's API; no hot path that warrants a bench suite.
+    evidence: {absent: {file: {path: benches}}}
+
+  # ============================== VCS / HISTORY =========================
+  - id: vcs.pre-commit-hook
+    dim: vcs
+    desc: Committed git hooks (scripts/hooks) gate locally before commit
+    state: planned
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: No scripts/hooks; core.hooksPath is the default .git/hooks.
+    evidence: {absent: {file: {path: scripts/hooks/pre-commit}}}
+
+  # =================== AGENT-READINESS / ONBOARDING ====================
+  - id: agent.agents-md
+    dim: agent
+    desc: AGENTS.md present (project conventions discoverable by agents)
+    state: present
+    cadence: once-must-hold
+    enforce: warning
+    tier: 1
+    evidence: {file: {path: AGENTS.md}}
+
+  - id: agent.bullseye
+    dim: agent
+    desc: bullseye.yaml present (convergence targets discoverable)
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: bullseye.yaml}}
+
+  - id: agent.cli-help
+    dim: agent
+    desc: Binary exposes --version, --help, and --help-agent
+    state: present
+    cadence: once-must-hold
+    enforce: informational
+    tier: 2
+    evidence: {file: {path: src/asc/cli.py, matches: '--help-agent'}}
+
+  - id: agent.claude-md
+    dim: agent
+    desc: CLAUDE.md present as a Claude-only adapter
+    state: skipped
+    cadence: once-must-hold
+    enforce: informational
+    tier: 3
+    reason: >-
+      AGENTS.md is the canonical agent file; no Claude-only adapter is needed
+      for this repo.
+    evidence: {absent: {file: {path: CLAUDE.md}}}
