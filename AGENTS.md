@@ -25,8 +25,13 @@ asc whoami
 asc apps
 asc sales --app MultiMaze -d 30
 asc reviews --app MultiMaze
+asc --json sales --app MultiMaze -d 30
 asc --help-agent
 ```
+
+`--json` and `--key` live only on the parent parser. They must precede
+the subcommand (`asc --json apps`, `asc --key ops whoami`). Suffix form
+(`asc apps --json`) exits 2.
 
 ## Delivery
 

@@ -56,10 +56,14 @@ asc apps
 asc sales --app MultiMaze -d 30          # first-time units (Trends "Units")
 asc sales --app MultiMaze --all-kinds -d 7
 asc sales --sku 201002090 --by country --version 3.1.0
-asc sales --app MultiMaze --json
+asc --json sales --app MultiMaze
 asc reviews --app MultiMaze --limit 10
 asc --help-agent
 ```
+
+`--json` and `--key` are parent-parser flags. They must precede the
+subcommand (`asc --json apps`, `asc --key ops whoami`). Suffix form
+(`asc apps --json`, `asc whoami --key ops`) exits 2.
 
 Default sales kind is **download** (Product Type `1` / `1F`) — the same
 measure ASC Sales Trends labels "Units". Pass `--all-kinds` to include
